@@ -42,7 +42,7 @@ Camera names are used in URLs: letters, digits, `-` and `_`.
 
 ## Supported
 
-Tested cameras (list, clips with audio, live), October 2026:
+Tested cameras, October 2026: clip list and playback on all four, live view on the C310 and C510W:
 
 | Model | Hardware | Firmware | Media encryption |
 |---|---|---|---|
