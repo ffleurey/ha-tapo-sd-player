@@ -1,0 +1,15 @@
+configuration:
+  cloud_password:
+    name: TP-Link cloud password
+    description: Password of the TP-Link account the cameras are registered to. pytapo logs in to each camera locally with it as user admin.
+  live_max_minutes:
+    name: Live view limit (minutes)
+    description: Live view stops after this time, so a forgotten tab does not drain a battery camera.
+  turn_on_media_encryption:
+    name: Turn on media encryption
+    description: Some cameras only stream with their media encryption on. When set, the app turns it on for a camera whose stream fails for that reason.
+  cameras:
+    name: Cameras
+    description: One entry per camera, name (shown as a tab, letters and digits) and host (IP address). A cloud_password per camera only if it differs.
+network:
+  8099/tcp: Player without HA login (leave empty to keep it off)

@@ -1,0 +1,195 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tapo SD clips</title>
+<style>
+:root{--bg:#fff;--fg:#1c1c1c;--mut:#6b6b6b;--line:#e3e3e3;--acc:#0b6bcb;--sel:#e8f1fb}
+@media (prefers-color-scheme:dark){:root{--bg:#141414;--fg:#e8e8e8;--mut:#9a9a9a;--line:#2c2c2c;--acc:#5aa2ef;--sel:#1d2a38}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px system-ui,sans-serif}
+header{display:flex;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);align-items:center;flex-wrap:wrap}
+#tabs{display:flex;gap:4px;overflow-x:auto;flex:1 1 auto;scrollbar-width:none}
+#tabs button{border:0;background:none;color:var(--mut);padding:8px 12px;border-radius:6px;cursor:pointer;font:inherit;white-space:nowrap}
+#tabs button.on{color:var(--fg);background:var(--sel)}
+.opts{display:flex;gap:12px;align-items:center}
+input[type=date]{font:inherit;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:4px}
+label{color:var(--mut);display:flex;gap:4px;align-items:center;white-space:nowrap}
+main{display:grid;grid-template-columns:1fr 300px;gap:12px;padding:12px;max-width:1300px;align-items:start}
+.player{min-width:0}
+video{display:block;width:100%;background:#000;border-radius:8px;aspect-ratio:16/9}
+#info{color:var(--mut);margin-top:6px;min-height:1.2em}
+ul{list-style:none;margin:0;padding:0;overflow:auto;border:1px solid var(--line);border-radius:8px}
+li{padding:7px 10px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:8px;align-items:center}
+li.on{background:var(--sel)}
+@media (hover:hover){li:hover{background:var(--sel)}}
+.t{font-variant-numeric:tabular-nums}.d{color:var(--mut);font-size:12px}
+li.day{cursor:default;color:var(--mut);font-size:12px;font-weight:600;padding:5px 10px;background:var(--bg);position:sticky;top:0}
+li.more{justify-content:center;color:var(--acc)}
+button.now{font:inherit;background:none;color:var(--acc);border:1px solid var(--line);border-radius:6px;padding:4px 8px;cursor:pointer}
+.live .t{color:#d33;font-weight:600}
+.b{font-size:11px;padding:1px 6px;border-radius:9px;white-space:nowrap;background:var(--line)}.b.person{background:#f5d08a;color:#000}
+li>.d{margin-right:auto}a.dl{color:var(--mut);text-decoration:none;padding:2px 8px;font-size:16px}a.dl:hover{color:var(--acc)}
+@media (max-width:800px){
+  header{padding:4px 8px;gap:4px}
+  #tabs{flex-basis:100%}
+  .opts{width:100%;justify-content:space-between}
+  main{grid-template-columns:1fr;padding:0;gap:0}
+  .player{position:sticky;top:0;z-index:1;background:var(--bg);padding:8px 8px 4px}
+  video{border-radius:6px}
+  #info{font-size:12px;margin-top:4px}
+  ul{max-height:none;border:0;border-radius:0;border-top:1px solid var(--line)}
+  li{padding:12px}
+}
+</style></head><body>
+<header><div id="tabs"></div><div class="opts"><label><input type="checkbox" id="det" checked>detections</label>
+<label><input type="checkbox" id="aud">audio</label><input type="date" id="day" title="Start from the end of this day"><button class="now" id="now">Latest</button></div></header>
+<main><div class="player"><video id="v" controls playsinline disablepictureinpicture></video><div id="info">Pick a clip.</div></div><ul id="list"></ul></main>
+<script>
+const BUFFER=2;  // seconds buffered before playback starts: the first seconds stutter otherwise
+let cam=null,clips=[],next=null,listReq=null,feed=null;const $=id=>document.getElementById(id);
+const fmt=s=>new Date(s*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+const dayOf=s=>new Date(s*1000).toLocaleDateString([], {weekday:'long',day:'numeric',month:'long'});
+const SKIP=7;  // empty 24 h pages searched in a row before asking (a camera with few clips)
+// Newest clips first, 24 h per request: `before` is the cursor the server returned, or the end
+// of the picked day, or nothing (now). more=false starts a new list.
+async function load(more){
+  if(listReq)listReq.abort();  // a slower answer for the previous camera must not land here
+  const ctl=listReq=new AbortController(),c=cam;
+  let before=more?next:null;
+  if(!more){clips=[];next=null;const d=$('day').value;
+    if(d){const t=new Date(d+'T00:00');t.setDate(t.getDate()+1);before=Math.floor(t/1000)}}
+  render(true);
+  try{
+    for(let i=0;;i++){
+      const r=await fetch('api/'+encodeURIComponent(c)+'/clips'+(before?`?before=${before}`:''),{signal:ctl.signal});const j=await r.json();
+      if(!r.ok){render(false,j.error);return}
+      clips=clips.concat(j.clips);next=before=j.next;
+      if(j.clips.length||!next||i+1>=SKIP)break}
+    render();
+  }catch(e){if(e.name!=='AbortError')render(false,'Could not load the clips.')}
+  finally{if(listReq===ctl)listReq=null}
+}
+// Drop the current stream: the browser closes its request, which stops the camera
+// session on the server; the server also stops it when this viewer asks for another clip.
+function stop(){
+  if(feed){feed.abort();feed=null}
+  const v=$('v');v.onprogress=v.ontimeupdate=v.onplaying=v.onerror=v.onended=null;
+  v.pause();v.removeAttribute('src');v.load();
+  document.querySelectorAll('li.on').forEach(x=>x.classList.remove('on'));
+}
+function render(loading,error){
+  const show=clips.filter(c=>!$('det').checked||c.events.length);
+  const on=document.querySelector('li.live.on'),sel=document.querySelector('li.clip.on')?.dataset.start;
+  const ul=$('list'),top=ul.scrollTop;ul.innerHTML='';if(!$('day').value)liveRow(on);
+  let day='';
+  for(const c of show){
+    const d=dayOf(c.start);if(d!==day){day=d;ul.insertAdjacentHTML('beforeend',`<li class="day">${d}</li>`)}
+    const li=document.createElement('li');li.className='clip'+(String(c.start)===sel?' on':'');li.dataset.start=c.start;
+    li.innerHTML=`<span class="t">${fmt(c.start)}</span><span class="d">${c.end-c.start}s</span>`+c.events.map(e=>`<span class="b ${e}">${e}</span>`).join('');
+    const a=document.createElement('a');a.className='dl';a.title='Download';a.textContent='⤓';
+    a.href=`clip/${cam}/${c.start}/${c.end}.mp4?audio=1&download=1`;a.onclick=e=>{e.stopPropagation();stop();$('info').textContent='Downloading (the player is stopped, the camera serves one clip at a time).'};li.append(a);
+    li.onclick=()=>play(c,li);ul.append(li)}
+  const hidden=clips.length-show.length;
+  if(loading)ul.insertAdjacentHTML('beforeend','<li class="d">Loading…</li>');
+  else if(error)ul.insertAdjacentHTML('beforeend',`<li class="d">${error}</li>`);
+  else{
+    if(!show.length)ul.insertAdjacentHTML('beforeend',`<li class="d">No clips${hidden?` with detections (${hidden} without)`:''}${next?' yet':''}.</li>`);
+    if(next){const li=document.createElement('li');li.className='more';
+      li.textContent=`Load the 24 h before ${dayOf(next)} ${fmt(next)}`;li.onclick=()=>load(true);ul.append(li)}
+    else if(clips.length)ul.insertAdjacentHTML('beforeend','<li class="d">Start of the SD card.</li>')}
+  ul.scrollTop=top;
+}
+function liveRow(on){
+  const li=document.createElement('li');li.className='live'+(on?' on':'');
+  li.innerHTML='<span class="t">● Live</span><span class="d">now</span>';li.onclick=()=>goLive(li);$('list').append(li);
+}
+function play(c,li){
+  const span=`${fmt(c.start)} to ${fmt(c.end)}`;
+  start(li,`clip/${cam}/${c.start}/${c.end}.mp4`,c.end-c.start,span,false);
+}
+function goLive(li){start(li,`live/${cam}.mp4`,1e9,'Live',true)}
+function start(li,url,len,span,live){
+  stop();li.classList.add('on');$('v').playbackRate=1;
+  const v=$('v'),t0=performance.now();let ready=false;
+  // no audio requested = no audio track; the player's own mute button is the only mute
+  const src=url+($('aud').checked?'?audio=1':''),MS=window.ManagedMediaSource||window.MediaSource;
+  if(live&&MS)mse(v,src,MS,()=>check());else v.src=src;
+  $('info').textContent=`${span}, loading…`;
+  // play() inside the tap keeps the element allowed to play with sound (iOS, Chrome);
+  // then hold at 0 until BUFFER seconds (live: 1 s) have arrived
+  const need=live?1.5:Math.min(BUFFER,len-0.5);
+  const end=()=>v.buffered.length?v.buffered.end(v.buffered.length-1):0;
+  const check=()=>{
+    if(ready){
+      if(!live)return;
+      // live: catch up by playing 10 % faster, never by seeking (a seek re-decodes from
+      // the previous keyframe, 2 s back on Tapo, and stutters); seek only when far behind
+      const lag=end()-v.currentTime;
+      if(lag>8)v.currentTime=end()-1.5;
+      else if(lag>3.5)v.playbackRate=1.1;
+      else if(lag<2)v.playbackRate=1;
+      const q=v.getVideoPlaybackQuality?v.getVideoPlaybackQuality():{droppedVideoFrames:0};
+      if(v.buffered.length)$('info').textContent=`Live, ${lag.toFixed(1)} s behind${v.playbackRate>1?', catching up':''}${q.droppedVideoFrames?`, ${q.droppedVideoFrames} frames dropped`:''}`;
+      return}
+    if(v.buffered.length&&v.currentTime<v.buffered.start(0))v.currentTime=v.buffered.start(0);
+    // WebKit may report no buffered ranges on a stream: then trust readyState
+    if(end()-v.currentTime>=need||(!v.buffered.length&&v.readyState>=4)||performance.now()-t0>8000){ready=true;v.play().catch(()=>{});
+      $('info').textContent=`${span}, started in ${((performance.now()-t0)/1000).toFixed(1)} s`}
+    else if(!v.paused)v.pause();
+  };
+  v.onprogress=check;v.ontimeupdate=check;v.onplaying=check;
+  v.onerror=()=>{$('info').textContent='Playback failed.';  // a <video> error carries no text: ask the server why
+    fetch('api/'+encodeURIComponent(cam)+'/problem').then(r=>r.json()).then(j=>{$('info').textContent='Playback failed: '+(j.error||'camera busy or asleep, try again.')}).catch(()=>{})};
+  if(live)v.onended=()=>{$('info').textContent='Live stopped (time limit or camera), tap Live to resume.'};
+  v.play().catch(()=>{});
+}
+// Live goes through Media Source: the page appends each piece as it arrives. Played as a
+// plain never-ending download, Firefox stuttered at the live edge (clips arrive faster
+// than real time and never reach it). iOS 17.1+ has ManagedMediaSource (untested).
+function mse(v,url,MS,onData){
+  const ms=new MS(),ctl=feed=new AbortController(),q=[];let sb=null,eos=false;
+  if(MS===window.ManagedMediaSource)v.disableRemotePlayback=true;
+  v.src=URL.createObjectURL(ms);
+  const pump=()=>{
+    if(!sb||sb.updating||ms.readyState!=='open')return;
+    const b=v.buffered;  // keep 30 s behind the playhead, a 10 min live is 90 MB
+    if(b.length&&v.currentTime-b.start(0)>60){sb.remove(0,v.currentTime-30);return}
+    if(q.length)sb.appendBuffer(q.shift());else if(eos)ms.endOfStream();
+  };
+  ms.addEventListener('sourceopen',async()=>{
+    URL.revokeObjectURL(v.src);
+    try{
+      const r=await fetch(url,{signal:ctl.signal});if(!r.ok)throw new Error(r.status);
+      const rd=r.body.getReader();let head=new Uint8Array(0);
+      for(;;){const {value,done}=await rd.read();if(done)break;
+        if(!sb){head=cat(head,value);const t=codecs(head);if(!t)continue;
+          sb=ms.addSourceBuffer(t);sb.onupdateend=()=>{onData();pump()};q.push(head)}
+        else q.push(value);
+        pump()}
+      eos=true;pump();
+    }catch(e){if(e.name!=='AbortError'&&feed===ctl)v.dispatchEvent(new Event('error'))}
+  },{once:true});
+}
+const cat=(a,b)=>{const c=new Uint8Array(a.length+b.length);c.set(a);c.set(b,a.length);return c};
+// MIME type from the init segment, once the whole moov box is in: avc1.PPCCLL from avcC
+function codecs(b){
+  const dv=new DataView(b.buffer,b.byteOffset,b.length),s=new TextDecoder('latin1').decode(b);
+  for(let o=0;o+8<=b.length;){const n=dv.getUint32(o),t=s.substr(o+4,4);
+    if(t==='moov'){if(o+n>b.length)return null;const m=s.substr(o,n),i=m.indexOf('avcC')+o;
+      const h=k=>b[i+k].toString(16).padStart(2,'0');
+      return `video/mp4; codecs="avc1.${h(5)}${h(6)}${h(7)}${m.includes('mp4a')?',mp4a.40.2':''}"`}
+    if(n<8)return null;o+=n}
+  return null;
+}
+// a hidden page (phone locked, other app) must not keep a camera streaming live
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&document.querySelector('li.live.on')){stop();$('info').textContent='Live stopped in the background, tap Live to resume.'}});
+try{$('aud').checked=localStorage.aud==='1'}catch(e){}
+$('aud').onchange=()=>{try{localStorage.aud=$('aud').checked?'1':'0'}catch(e){}};
+$('det').onchange=()=>render();
+const restart=()=>{stop();$('info').textContent='Pick a clip.';load()};
+$('day').onchange=restart;$('now').onclick=()=>{$('day').value='';restart()};
+// side by side, the list is exactly as tall as the video
+new ResizeObserver(()=>{$('list').style.height=matchMedia('(max-width:800px)').matches?'':$('v').offsetHeight+'px'}).observe($('v'));
+fetch('api/cams').then(r=>r.json()).then(cs=>{for(const n of cs){const b=document.createElement('button');b.textContent=n;
+  b.onclick=()=>{if(cam===n)return;stop();$('info').textContent='Pick a clip.';cam=n;document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));load()};
+  $('tabs').append(b)}$('tabs').querySelector('button').click()});
+</script></body></html>
