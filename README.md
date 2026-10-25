@@ -57,7 +57,7 @@ Not affiliated with TP-Link. MIT licence.
   starting another, and retry briefly on its "busy" error codes.
 - C210 and C510W reject a recording search spanning 25 h or more (`-71105`), so
   searching by date fails on the day clocks go back; search 24 h at a time.
-- With media encryption off, some firmware (C310 1.3.16) answers the media
+- With media encryption off, some firmware ([DOCS](tapo_sd_player/DOCS.md#supported)) answers the media
   session with user `none`, and pytapo then needs a firmware key it does not
   have ("Media encryption is off and super secret key is not set"):
   `setMediaEncrypt(True)` fixes it. The other models stream either way.
