@@ -10,11 +10,11 @@ Assistant.
 - The password of the TP-Link cloud account the cameras are registered to: the
   app logs in to each camera locally (user `admin`) with it, as
   [pytapo](https://github.com/JurajNyiri/pytapo) does. No cloud traffic.
-- Some firmware (seen on a C310, 1.3.16) only streams with the camera's **media
-  encryption** on: with it off, the list works but clips and live fail, and the
-  page says so. Set `turn_on_media_encryption` and the app switches it on the
-  first time a stream fails for that reason (the camera's own setting, kept
-  after reboots). The C210, C410 and C510W we have stream with it off.
+- Some firmware only streams with the camera's **media encryption** on
+  ([Supported](#supported)): with it off, the list works but clips and live
+  fail, and the page says so. Set `turn_on_media_encryption` and the app
+  switches it on the first time a stream fails for that reason (the camera's
+  own setting, kept after reboots).
 
 ## Configuration
 
@@ -42,19 +42,25 @@ Camera names are used in URLs: letters, digits, `-` and `_`.
 
 ## Supported
 
-| | |
-|---|---|
-| Tested cameras | C210, C310, C410 (battery), C510W |
-| Other Tapo models | Untested: may work, issues and reports welcome |
-| Installation | Home Assistant OS or Supervised, aarch64 or amd64 |
-| Browsers | Tested in Firefox on a desktop; other browsers, phones and the HA app less tested |
+Tested cameras (list, clips with audio, live), October 2026:
+
+| Model | Hardware | Firmware | Media encryption |
+|---|---|---|---|
+| C210 | 3.0 | 1.2.7 Build 260818 | works off |
+| C310 | 1.0 | 1.3.16 Build 240909 | needs on |
+| C410 (battery) | 2.0 | 1.3.5 Build 260430 | works off |
+| C510W | 2.0 | 1.3.4 Build 260523 | works off |
+
+Other models and firmware: untested, may work; reports welcome.
+Installation: Home Assistant OS or Supervised, aarch64 or amd64.
+Browsers: tested in Firefox on a desktop; other browsers, phones and the HA app
+less tested.
 
 ## Limits
 
 - A camera serves one media session at a time: two viewers on one camera, or the
   Tapo app at the same time, interrupt each other ("camera busy, try again").
 - Battery cameras (C410) must be awake; live view stops after `live_max_minutes`.
-- Some cameras reject a search longer than 25 h, hence 24 h per request.
 - Some cameras (C410) do not report when their recordings start, so their list
   never says it reached the beginning.
 - The camera API is undocumented: a firmware update may break the app.

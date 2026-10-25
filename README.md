@@ -13,7 +13,7 @@ or take parts of it.
 
 Or Settings, Apps, App store, ⋮, Repositories, add
 `https://github.com/ffleurey/ha-tapo-sd-player`, then install **Tapo SD player**.
-Setup and limits: [DOCS.md](tapo_sd_player/DOCS.md).
+Setup: [DOCS.md](tapo_sd_player/DOCS.md).
 
 ## How it works
 
@@ -26,11 +26,23 @@ Setup and limits: [DOCS.md](tapo_sd_player/DOCS.md).
   24 h before", a date to jump back, a `<video>` element; live through Media Source.
 - Behind HA ingress, so HA's login and the HA phone app apply.
 
-## Status
-
-Tested on our cameras only: C210, C310, C410 and C510W, on HA OS (aarch64 and
-amd64). The camera API is undocumented: a firmware update may break it.
+Tested cameras and firmware, and the limits: [DOCS.md](tapo_sd_player/DOCS.md#supported).
 Not affiliated with TP-Link. MIT licence.
+
+## Development and releases
+
+- Run outside HA: `docker build -t tsp tapo_sd_player`, then
+  `docker run --rm -p 127.0.0.1:8099:8099 -v $PWD/options.json:/data/options.json:ro tsp`
+  with an `options.json` shaped like the app options (DOCS), and open
+  `http://localhost:8099/`. Logs: one line per login, list and stream.
+- Release: bump `version` in `tapo_sd_player/config.yaml`, add a line to
+  `tapo_sd_player/CHANGELOG.md`, commit, then `git tag vX.Y.Z && git push --tags`.
+  The workflow (`.github/workflows/build.yaml`) checks the tag against
+  `config.yaml` and pushes `ghcr.io/ffleurey/tapo-sd-player:X.Y.Z` for amd64 and
+  arm64; Home Assistant then offers the update.
+- After a camera firmware update: retest list, clip and live on that model and
+  update the table in [DOCS.md](tapo_sd_player/DOCS.md#supported) (no release needed
+  for a docs change).
 
 ## Notes for anyone building on it
 
@@ -45,6 +57,10 @@ Not affiliated with TP-Link. MIT licence.
   starting another, and retry briefly on its "busy" error codes.
 - C210 and C510W reject a recording search spanning 25 h or more (`-71105`), so
   searching by date fails on the day clocks go back; search 24 h at a time.
+- With media encryption off, some firmware (C310 1.3.16) answers the media
+  session with user `none`, and pytapo then needs a firmware key it does not
+  have ("Media encryption is off and super secret key is not set"):
+  `setMediaEncrypt(True)` fixes it. The other models stream either way.
 - Detection `alarm_type`: 2 motion, 4 line crossing, 6 person.
 - Live: a plain `<video src>` on the never-ending stream stutters in Firefox;
   Media Source with a small catch-up (play at 1.1x) stays about 1.5 s behind.
